@@ -254,6 +254,20 @@
         border-radius: 5px;
         font-size: 0.9em;
       }
+
+      /* Highlight row when status changes */
+      @keyframes highlight {
+        0% {
+          background-color: #d1fae5;
+        }
+        100% {
+          background-color: transparent;
+        }
+      }
+
+      .row-updated {
+        animation: highlight 2s ease;
+      }
     </style>
   </head>
   <body>
@@ -332,6 +346,7 @@
       const API_URL = "http://localhost:3000/api";
       let currentSessionId = null;
       let isLoadingSession = false;
+      let previousAttendances = new Map(); // Changed to Map for better lookup
 
       // Set today's date as default
       document.getElementById("sessionDate").valueAsDate = new Date();
@@ -380,7 +395,7 @@
           const data = await response.json();
 
           const select = document.getElementById("courseSelect");
-          select.innerHTML = '<option value="">Select Course...</option>'; // Clear first
+          select.innerHTML = '<option value="">Select Course...</option>';
 
           data.data.forEach((course) => {
             const option = document.createElement("option");
@@ -446,8 +461,6 @@
         }
 
         try {
-          console.log("🔄 Loading attendance for session:", currentSessionId);
-
           const response = await fetch(
             `${API_URL}/sessions/${currentSessionId}/attendances`
           );
@@ -459,7 +472,6 @@
               data.attendances.length,
               "records"
             );
-            console.log("📊 Stats:", data.stats);
 
             displayAttendanceTable(data.attendances);
             displayStats(data.stats);
@@ -472,136 +484,180 @@
         }
       }
 
-      // Display attendance table
+      // Display attendance table with smart update
       function displayAttendanceTable(attendances) {
-        const html = `
-          <table>
-            <thead>
-              <tr>
-                <th>No</th>
-                <th>NPM</th>
-                <th>Student Name</th>
-                <th>Status</th>
-                <th>Check-In Time</th>
-                <th>Confidence</th>
-                <th>Notes</th>
-                <th>Attachment</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${attendances
-                .map(
-                  (att, index) => `
+        const tbody = document.querySelector("#attendanceTable tbody");
+
+        // If table doesn't exist, create it
+        if (!tbody) {
+          const html = `
+            <table>
+              <thead>
                 <tr>
-                  <td>${index + 1}</td>
-                  <td><strong>${att.npm}</strong></td>
-                  <td>${att.studentName}</td>
-                  <td>
-                    <div class="radio-group">
-                      <label>
-                        <input type="radio" name="status_${
-                          att._id
-                        }" value="Hadir" 
-                          ${att.status === "Hadir" ? "checked" : ""}
-                          onchange="updateStatus('${att._id}', 'Hadir')">
-                        <span class="status-hadir">Hadir</span>
-                      </label>
-                      <label>
-                        <input type="radio" name="status_${
-                          att._id
-                        }" value="Izin" 
-                          ${att.status === "Izin" ? "checked" : ""}
-                          onchange="updateStatus('${att._id}', 'Izin')">
-                        <span class="status-izin">Izin</span>
-                      </label>
-                      <label>
-                        <input type="radio" name="status_${
-                          att._id
-                        }" value="Sakit" 
-                          ${att.status === "Sakit" ? "checked" : ""}
-                          onchange="updateStatus('${att._id}', 'Sakit')">
-                        <span class="status-sakit">Sakit</span>
-                      </label>
-                      <label>
-                        <input type="radio" name="status_${
-                          att._id
-                        }" value="Alpha" 
-                          ${att.status === "Alpha" ? "checked" : ""}
-                          onchange="updateStatus('${att._id}', 'Alpha')">
-                        <span class="status-alpha">Alpha</span>
-                      </label>
-                      <label>
-                        <input type="radio" name="status_${
-                          att._id
-                        }" value="Belum Absen" 
-                          ${att.status === "Belum Absen" ? "checked" : ""}
-                          onchange="updateStatus('${att._id}', 'Belum Absen')">
-                        <span class="status-belum">Belum</span>
-                      </label>
-                    </div>
-                  </td>
-                  <td>${
-                    att.checkInTime
-                      ? new Date(att.checkInTime).toLocaleString("id-ID")
-                      : "-"
-                  }</td>
-                  <td>${
-                    att.confidence
-                      ? `<span class="confidence-badge">${att.confidence.toFixed(
-                          1
-                        )}%</span>`
-                      : "-"
-                  }</td>
-                  <td>
-                    <input type="text" class="notes-input" 
-                      value="${att.notes || ""}" 
-                      onchange="updateNotes('${att._id}', this.value)"
-                      placeholder="Add notes...">
-                  </td>
-                  <td>
-                    ${
-                      att.status === "Izin" || att.status === "Sakit"
-                        ? `
-                      <input type="file" id="file_${
-                        att._id
-                      }" class="file-input" 
-                        accept=".pdf" onchange="uploadFile('${att._id}', this)">
-                      <button class="upload-btn" onclick="document.getElementById('file_${
-                        att._id
-                      }').click()">
-                        📎 Upload PDF
-                      </button>
-                      ${
-                        att.attachmentPath
-                          ? `<br><a href="${att.attachmentPath}" target="_blank">View File</a>`
-                          : ""
-                      }
-                    `
-                        : "-"
-                    }
-                  </td>
+                  <th>No</th>
+                  <th>NPM</th>
+                  <th>Student Name</th>
+                  <th>Status</th>
+                  <th>Check-In Time</th>
+                  <th>Confidence</th>
+                  <th>Notes</th>
+                  <th>Attachment</th>
                 </tr>
-              `
-                )
-                .join("")}
-            </tbody>
-          </table>
-        `;
+              </thead>
+              <tbody></tbody>
+            </table>
+          `;
+          document.getElementById("attendanceTable").innerHTML = html;
 
-        document.getElementById("attendanceTable").innerHTML = html;
+          // Now render all rows
+          renderAllRows(attendances);
+          return;
+        }
 
-        // Check for changes
-        attendances.forEach((att) => {
-          const prev = previousAttendances.find((p) => p.npm === att.npm);
-          if (prev && prev.status !== att.status) {
-            console.log(
-              `Status changed for ${att.npm}: ${prev.status} → ${att.status}`
-            );
-            setTimeout(() => highlightUpdatedRow(att.npm), 100);
+        // Table exists - check for changes and update only changed rows
+        attendances.forEach((att, index) => {
+          const previousAtt = previousAttendances.get(att.npm);
+
+          // If status changed, update the row
+          if (!previousAtt || previousAtt.status !== att.status) {
+            updateRow(att, index);
+
+            // Highlight changed row
+            if (previousAtt && previousAtt.status !== att.status) {
+              console.log(
+                `✨ Status changed for ${att.npm}: ${previousAtt.status} → ${att.status}`
+              );
+              highlightRow(att.npm);
+            }
           }
         });
 
-        previousAttendances = JSON.parse(JSON.stringify(attendances));
+        // Store current state
+        previousAttendances.clear();
+        attendances.forEach((att) => {
+          previousAttendances.set(att.npm, { ...att });
+        });
+      }
+
+      // Render all rows (initial load)
+      function renderAllRows(attendances) {
+        const tbody = document.querySelector("#attendanceTable tbody");
+        tbody.innerHTML = attendances
+          .map((att, index) => createRowHTML(att, index))
+          .join("");
+
+        // Store initial state
+        previousAttendances.clear();
+        attendances.forEach((att) => {
+          previousAttendances.set(att.npm, { ...att });
+        });
+      }
+
+      // Update single row
+      function updateRow(att, index) {
+        const tbody = document.querySelector("#attendanceTable tbody");
+        const rows = tbody.querySelectorAll("tr");
+        const row = rows[index];
+
+        if (row) {
+          row.outerHTML = createRowHTML(att, index);
+        }
+      }
+
+      // Create row HTML
+      function createRowHTML(att, index) {
+        return `
+          <tr data-npm="${att.npm}">
+            <td>${index + 1}</td>
+            <td><strong>${att.npm}</strong></td>
+            <td>${att.studentName}</td>
+            <td>
+              <div class="radio-group">
+                <label>
+                  <input type="radio" name="status_${att._id}" value="Hadir" 
+                    ${att.status === "Hadir" ? "checked" : ""}
+                    onchange="updateStatus('${att._id}', 'Hadir')">
+                  <span class="status-hadir">Hadir</span>
+                </label>
+                <label>
+                  <input type="radio" name="status_${att._id}" value="Izin" 
+                    ${att.status === "Izin" ? "checked" : ""}
+                    onchange="updateStatus('${att._id}', 'Izin')">
+                  <span class="status-izin">Izin</span>
+                </label>
+                <label>
+                  <input type="radio" name="status_${att._id}" value="Sakit" 
+                    ${att.status === "Sakit" ? "checked" : ""}
+                    onchange="updateStatus('${att._id}', 'Sakit')">
+                  <span class="status-sakit">Sakit</span>
+                </label>
+                <label>
+                  <input type="radio" name="status_${att._id}" value="Alpha" 
+                    ${att.status === "Alpha" ? "checked" : ""}
+                    onchange="updateStatus('${att._id}', 'Alpha')">
+                  <span class="status-alpha">Alpha</span>
+                </label>
+                <label>
+                  <input type="radio" name="status_${
+                    att._id
+                  }" value="Belum Absen" 
+                    ${att.status === "Belum Absen" ? "checked" : ""}
+                    onchange="updateStatus('${att._id}', 'Belum Absen')">
+                  <span class="status-belum">Belum</span>
+                </label>
+              </div>
+            </td>
+            <td>${
+              att.checkInTime
+                ? new Date(att.checkInTime).toLocaleString("id-ID")
+                : "-"
+            }</td>
+            <td>${
+              att.confidence
+                ? `<span class="confidence-badge">${att.confidence.toFixed(
+                    1
+                  )}%</span>`
+                : "-"
+            }</td>
+            <td>
+              <input type="text" class="notes-input" 
+                value="${att.notes || ""}" 
+                onchange="updateNotes('${att._id}', this.value)"
+                placeholder="Add notes...">
+            </td>
+            <td>
+              ${
+                att.status === "Izin" || att.status === "Sakit"
+                  ? `
+                <input type="file" id="file_${att._id}" class="file-input" 
+                  accept=".pdf" onchange="uploadFile('${att._id}', this)">
+                <button class="upload-btn" onclick="document.getElementById('file_${
+                  att._id
+                }').click()">
+                  📎 Upload PDF
+                </button>
+                ${
+                  att.attachmentPath
+                    ? `<br><a href="${att.attachmentPath}" target="_blank">View File</a>`
+                    : ""
+                }
+              `
+                  : "-"
+              }
+            </td>
+          </tr>
+        `;
+      }
+
+      // Highlight row when status changes
+      function highlightRow(npm) {
+        const row = document.querySelector(`tr[data-npm="${npm}"]`);
+        if (row) {
+          row.classList.add("row-updated");
+          setTimeout(() => {
+            row.classList.remove("row-updated");
+          }, 2000);
+        }
       }
 
       // Display statistics
@@ -614,23 +670,6 @@
         document.getElementById("statAlpha").textContent = stats.alpha;
         document.getElementById("statBelum").textContent = stats.belumAbsen;
       }
-
-      // Add visual feedback for status changes
-      function highlightUpdatedRow(npm) {
-        const rows = document.querySelectorAll("tr");
-        rows.forEach((row) => {
-          const npmCell = row.querySelector("td:nth-child(2)");
-          if (npmCell && npmCell.textContent === npm) {
-            row.style.backgroundColor = "#d1fae5";
-            setTimeout(() => {
-              row.style.backgroundColor = "";
-            }, 3000);
-          }
-        });
-      }
-
-      // Modify loadAttendanceList to store previous data
-      let previousAttendances = [];
 
       // Update status
       async function updateStatus(attendanceId, status) {
@@ -648,7 +687,7 @@
 
           if (data.success) {
             showAlert(`Status updated to ${status}`, "success");
-            loadAttendanceList(); // Refresh list
+            loadAttendanceList();
           } else {
             showAlert(data.error, "error");
           }
@@ -675,13 +714,12 @@
             const data = await response.json();
 
             if (data.success) {
-              // Don't show alert for notes update to avoid spam
-              console.log("Notes updated");
+              console.log("✅ Notes updated");
             }
           } catch (error) {
-            console.error("Error updating notes:", error.message);
+            console.error("❌ Error updating notes:", error.message);
           }
-        }, 1000); // Wait 1 second after typing stops
+        }, 1000);
       }
 
       // Upload file
@@ -715,7 +753,7 @@
 
           if (data.success) {
             showAlert("File uploaded successfully", "success");
-            loadAttendanceList(); // Refresh list
+            loadAttendanceList();
           } else {
             showAlert(data.error, "error");
           }
@@ -746,7 +784,20 @@
 
           if (data.success) {
             showAlert("Session closed successfully", "success");
-            loadAttendanceList();
+
+            // Reset UI
+            currentSessionId = null;
+            previousAttendances.clear();
+
+            document.getElementById("activeSession").classList.add("hidden");
+            document.getElementById("statsSection").classList.add("hidden");
+            document.getElementById("attendanceTable").innerHTML =
+              '<p class="loading">Please create or select a session</p>';
+
+            document.getElementById("courseSelect").value = "";
+            document.getElementById("sessionDate").valueAsDate = new Date();
+
+            console.log("✅ Session closed and UI reset");
           } else {
             showAlert(data.error, "error");
           }
@@ -769,7 +820,7 @@
         }, 5000);
       }
 
-      // Auto-refresh every 3 seconds (reduced from 5 for better real-time feel)
+      // Auto-refresh every 3 seconds
       let refreshInterval;
       function startAutoRefresh() {
         refreshInterval = setInterval(() => {
