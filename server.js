@@ -1,7 +1,9 @@
-// server.js - REST API for Face Recognition Attendance System
+// server.js - Updated with Session-based Attendance
 const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const cors = require("cors");
+const multer = require("multer");
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
@@ -10,22 +12,47 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static("uploads"));
+
+// File upload configuration
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({
+  storage: storage,
+  fileFilter: function (req, file, cb) {
+    if (file.mimetype === "application/pdf") {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF files are allowed"));
+    }
+  },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+});
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017";
 const DB_NAME = "attendance_system";
 
-// Serve static files
 app.use(express.static("public"));
 
-// Serve dashboard
 app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
 
+app.get("/lecturer", (req, res) => {
+  res.sendFile(__dirname + "/public/lecturer-dashboard.html");
+});
+
 let db;
 
-// Connect to MongoDB
 async function connectDB() {
   try {
     const client = await MongoClient.connect(MONGODB_URI);
@@ -37,114 +64,117 @@ async function connectDB() {
   }
 }
 
-// ==================== API ENDPOINTS ====================
+// ==================== SESSION MANAGEMENT ====================
 
-// 1. Get all attendances with filters
-app.get("/api/attendances", async (req, res) => {
+// 1. Create attendance session (by Dosen)
+app.post("/api/sessions/create", async (req, res) => {
   try {
-    const { courseCode, date, npm } = req.query;
+    const { courseCode, date } = req.body;
 
-    let query = {};
-
-    // Filter by course
-    if (courseCode) {
-      query.courseCode = courseCode;
+    // Get course info
+    const course = await db.collection("courses").findOne({ courseCode });
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        error: "Course not found",
+      });
     }
 
-    // Filter by NPM
-    if (npm) {
-      query.npm = npm;
+    // Get all enrolled students for this course
+    const students = await db.collection("students").find({}).toArray();
+
+    // Check if session already exists for this date
+    const sessionDate = new Date(date);
+    sessionDate.setHours(0, 0, 0, 0);
+
+    const existingSession = await db.collection("attendance_sessions").findOne({
+      courseCode,
+      date: sessionDate,
+    });
+
+    if (existingSession) {
+      return res.json({
+        success: false,
+        error: "Session already exists for this date",
+        sessionId: existingSession._id,
+      });
     }
 
-    // Filter by date
+    // Create session
+    const session = {
+      courseCode,
+      courseName: course.courseName,
+      lecturerName: course.lecturerName,
+      date: sessionDate,
+      createdAt: new Date(),
+      status: "active",
+    };
+
+    const sessionResult = await db
+      .collection("attendance_sessions")
+      .insertOne(session);
+    const sessionId = sessionResult.insertedId;
+
+    // Create attendance records for all students
+    const attendanceRecords = students.map((student) => ({
+      sessionId,
+      courseCode,
+      courseName: course.courseName,
+      npm: student.npm,
+      studentName: student.name,
+      status: "Belum Absen", // Default status
+      checkInTime: null,
+      confidence: null,
+      recognitionMethod: null,
+      notes: null,
+      attachmentPath: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+
+    await db.collection("attendances").insertMany(attendanceRecords);
+
+    res.json({
+      success: true,
+      message: "Attendance session created",
+      sessionId,
+      totalStudents: students.length,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// 2. Get active session
+app.get("/api/sessions/active", async (req, res) => {
+  try {
+    const { courseCode, date } = req.query;
+
+    const query = { status: "active" };
+    if (courseCode) query.courseCode = courseCode;
     if (date) {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      query.checkInTime = {
-        $gte: startOfDay,
-        $lte: endOfDay,
-      };
+      const sessionDate = new Date(date);
+      sessionDate.setHours(0, 0, 0, 0);
+      query.date = sessionDate;
     }
 
-    const attendances = await db
-      .collection("attendances")
-      .find(query)
-      .sort({ checkInTime: -1 })
-      .toArray();
-
-    res.json({
-      success: true,
-      count: attendances.length,
-      data: attendances,
+    const session = await db.collection("attendance_sessions").findOne(query, {
+      sort: { createdAt: -1 },
     });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
 
-// 2. Get latest attendances (FIXED - without optional parameter)
-app.get("/api/attendances/latest", async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 20; // Get from query string instead
-
-    const attendances = await db
-      .collection("attendances")
-      .find({})
-      .sort({ checkInTime: -1 })
-      .limit(limit)
-      .toArray();
-
-    res.json({
-      success: true,
-      count: attendances.length,
-      data: attendances,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// 3. Get attendance by course and date
-app.get("/api/attendances/course/:courseCode", async (req, res) => {
-  try {
-    const { courseCode } = req.params;
-    const { date } = req.query;
-
-    let query = { courseCode };
-
-    if (date) {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      query.checkInTime = {
-        $gte: startOfDay,
-        $lte: endOfDay,
-      };
+    if (!session) {
+      return res.json({
+        success: false,
+        message: "No active session found",
+      });
     }
 
-    const attendances = await db
-      .collection("attendances")
-      .find(query)
-      .sort({ checkInTime: -1 })
-      .toArray();
-
     res.json({
       success: true,
-      count: attendances.length,
-      data: attendances,
+      session,
     });
   } catch (error) {
     res.status(500).json({
@@ -154,23 +184,131 @@ app.get("/api/attendances/course/:courseCode", async (req, res) => {
   }
 });
 
-// 4. Get attendance by ID
-app.get("/api/attendances/:id", async (req, res) => {
+// 3. Get attendance list for session
+app.get("/api/sessions/:sessionId/attendances", async (req, res) => {
   try {
-    const attendance = await db
-      .collection("attendances")
-      .findOne({ _id: new ObjectId(req.params.id) });
+    const sessionId = new ObjectId(req.params.sessionId);
 
-    if (!attendance) {
+    const attendances = await db
+      .collection("attendances")
+      .find({ sessionId })
+      .sort({ studentName: 1 })
+      .toArray();
+
+    // Calculate statistics
+    const stats = {
+      total: attendances.length,
+      hadir: attendances.filter((a) => a.status === "Hadir").length,
+      izin: attendances.filter((a) => a.status === "Izin").length,
+      sakit: attendances.filter((a) => a.status === "Sakit").length,
+      alpha: attendances.filter((a) => a.status === "Alpha").length,
+      belumAbsen: attendances.filter((a) => a.status === "Belum Absen").length,
+    };
+
+    res.json({
+      success: true,
+      attendances,
+      stats,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// 4. Update attendance status (Face Recognition)
+app.post("/api/attendances/mark-present", async (req, res) => {
+  try {
+    const { sessionId, npm, confidence } = req.body;
+
+    const result = await db.collection("attendances").updateOne(
+      {
+        sessionId: new ObjectId(sessionId),
+        npm,
+      },
+      {
+        $set: {
+          status: "Hadir",
+          checkInTime: new Date(),
+          confidence,
+          recognitionMethod: "Face Recognition",
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Attendance record not found",
+      });
+    }
+
+    // Get updated record
+    const attendance = await db.collection("attendances").findOne({
+      sessionId: new ObjectId(sessionId),
+      npm,
+    });
+
+    res.json({
+      success: true,
+      message: "Attendance marked as Hadir",
+      attendance,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// 5. Update attendance status manually (by Dosen)
+app.put("/api/attendances/:id/status", async (req, res) => {
+  try {
+    const { status, notes } = req.body;
+
+    const validStatuses = ["Hadir", "Izin", "Sakit", "Alpha", "Belum Absen"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid status",
+      });
+    }
+
+    const updateData = {
+      status,
+      updatedAt: new Date(),
+    };
+
+    if (notes) updateData.notes = notes;
+
+    // If changing from Izin/Sakit to other status, remove attachment
+    if (status !== "Izin" && status !== "Sakit") {
+      updateData.attachmentPath = null;
+    }
+
+    const result = await db
+      .collection("attendances")
+      .updateOne({ _id: new ObjectId(req.params.id) }, { $set: updateData });
+
+    if (result.matchedCount === 0) {
       return res.status(404).json({
         success: false,
         error: "Attendance not found",
       });
     }
 
+    const attendance = await db
+      .collection("attendances")
+      .findOne({ _id: new ObjectId(req.params.id) });
+
     res.json({
       success: true,
-      data: attendance,
+      message: "Status updated",
+      attendance,
     });
   } catch (error) {
     res.status(500).json({
@@ -180,7 +318,97 @@ app.get("/api/attendances/:id", async (req, res) => {
   }
 });
 
-// 5. Get all students
+// 6. Upload permission letter (PDF)
+app.post(
+  "/api/attendances/:id/upload",
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "No file uploaded",
+        });
+      }
+
+      const attendance = await db
+        .collection("attendances")
+        .findOne({ _id: new ObjectId(req.params.id) });
+
+      if (!attendance) {
+        return res.status(404).json({
+          success: false,
+          error: "Attendance not found",
+        });
+      }
+
+      // Update attendance with file path
+      await db.collection("attendances").updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $set: {
+            attachmentPath: `/uploads/${req.file.filename}`,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      res.json({
+        success: true,
+        message: "File uploaded successfully",
+        filePath: `/uploads/${req.file.filename}`,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+);
+
+// 7. Close session
+app.put("/api/sessions/:sessionId/close", async (req, res) => {
+  try {
+    // Update all "Belum Absen" to "Alpha"
+    await db.collection("attendances").updateMany(
+      {
+        sessionId: new ObjectId(req.params.sessionId),
+        status: "Belum Absen",
+      },
+      {
+        $set: {
+          status: "Alpha",
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    // Close session
+    await db.collection("attendance_sessions").updateOne(
+      { _id: new ObjectId(req.params.sessionId) },
+      {
+        $set: {
+          status: "closed",
+          closedAt: new Date(),
+        },
+      }
+    );
+
+    res.json({
+      success: true,
+      message: "Session closed, Belum Absen changed to Alpha",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ==================== EXISTING ENDPOINTS ====================
+
 app.get("/api/students", async (req, res) => {
   try {
     const students = await db
@@ -202,33 +430,6 @@ app.get("/api/students", async (req, res) => {
   }
 });
 
-// 6. Get student by NPM
-app.get("/api/students/:npm", async (req, res) => {
-  try {
-    const student = await db
-      .collection("students")
-      .findOne({ npm: req.params.npm });
-
-    if (!student) {
-      return res.status(404).json({
-        success: false,
-        error: "Student not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: student,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// 7. Get all courses
 app.get("/api/courses", async (req, res) => {
   try {
     const courses = await db
@@ -250,30 +451,22 @@ app.get("/api/courses", async (req, res) => {
   }
 });
 
-// 8. Get statistics
 app.get("/api/stats", async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    // Total students
     const totalStudents = await db.collection("students").countDocuments();
 
-    // Present today (distinct students)
     const presentToday = await db.collection("attendances").distinct("npm", {
+      status: "Hadir",
       checkInTime: {
         $gte: today,
-        $lt: tomorrow,
       },
     });
 
-    // Total courses
     const totalCourses = await db.collection("courses").countDocuments();
 
-    // Attendance rate
     const attendanceRate =
       totalStudents > 0
         ? Math.round((presentToday.length / totalStudents) * 100)
@@ -296,40 +489,6 @@ app.get("/api/stats", async (req, res) => {
   }
 });
 
-// 9. Get today's attendances (for real-time monitoring)
-app.get("/api/attendances/today", async (req, res) => {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const attendances = await db
-      .collection("attendances")
-      .find({
-        checkInTime: {
-          $gte: today,
-          $lt: tomorrow,
-        },
-      })
-      .sort({ checkInTime: -1 })
-      .toArray();
-
-    res.json({
-      success: true,
-      count: attendances.length,
-      data: attendances,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// 10. Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({
     success: true,
@@ -339,19 +498,16 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Start server
+// Create uploads directory if not exists
+const fs = require("fs");
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads");
+}
+
 connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📊 Dashboard: http://localhost:${PORT}`);
-    console.log(`🔌 API endpoints: http://localhost:${PORT}/api`);
-    console.log(`\n📡 Available endpoints:`);
-    console.log(`   GET  /api/health`);
-    console.log(`   GET  /api/stats`);
-    console.log(`   GET  /api/attendances`);
-    console.log(`   GET  /api/attendances/latest?limit=20`);
-    console.log(`   GET  /api/attendances/today`);
-    console.log(`   GET  /api/students`);
-    console.log(`   GET  /api/courses`);
+    console.log(`📊 Lecturer Dashboard: http://localhost:${PORT}/lecturer`);
+    console.log(`📱 Student Dashboard: http://localhost:${PORT}`);
   });
 });

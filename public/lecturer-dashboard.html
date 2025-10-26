@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lecturer Dashboard - Attendance Management</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      header {
+        background: white;
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        margin-bottom: 30px;
+      }
+
+      h1 {
+        color: #667eea;
+        font-size: 2em;
+        margin-bottom: 10px;
+      }
+
+      .session-control {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        margin-bottom: 20px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 600;
+        color: #333;
+      }
+
+      select,
+      input,
+      button {
+        padding: 12px 20px;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 1em;
+        width: 100%;
+      }
+
+      button {
+        background: #667eea;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+        transition: background 0.3s;
+        margin-top: 10px;
+      }
+
+      button:hover {
+        background: #5568d3;
+      }
+
+      .btn-success {
+        background: #10b981;
+      }
+
+      .btn-success:hover {
+        background: #059669;
+      }
+
+      .btn-danger {
+        background: #ef4444;
+      }
+
+      .btn-danger:hover {
+        background: #dc2626;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        margin: 20px 0;
+      }
+
+      .stat-box {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+      }
+
+      .stat-number {
+        font-size: 2em;
+        font-weight: bold;
+        color: #667eea;
+      }
+
+      .stat-label {
+        color: #666;
+        font-size: 0.9em;
+        margin-top: 5px;
+      }
+
+      .attendance-list {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+      }
+
+      th {
+        background: #667eea;
+        color: white;
+        padding: 15px;
+        text-align: left;
+        font-weight: 600;
+      }
+
+      td {
+        padding: 15px;
+        border-bottom: 1px solid #e0e0e0;
+      }
+
+      tr:hover {
+        background: #f8f9fa;
+      }
+
+      .radio-group {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .radio-group label {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-weight: normal;
+        cursor: pointer;
+      }
+
+      .radio-group input[type="radio"] {
+        width: auto;
+        cursor: pointer;
+      }
+
+      .status-hadir {
+        color: #10b981;
+        font-weight: bold;
+      }
+
+      .status-izin {
+        color: #3b82f6;
+        font-weight: bold;
+      }
+
+      .status-sakit {
+        color: #f59e0b;
+        font-weight: bold;
+      }
+
+      .status-alpha {
+        color: #ef4444;
+        font-weight: bold;
+      }
+
+      .status-belum {
+        color: #9ca3af;
+      }
+
+      .upload-btn {
+        background: #3b82f6;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 0.85em;
+      }
+
+      .upload-btn:hover {
+        background: #2563eb;
+      }
+
+      .file-input {
+        display: none;
+      }
+
+      .confidence-badge {
+        background: #dbeafe;
+        color: #1e40af;
+        padding: 3px 8px;
+        border-radius: 10px;
+        font-size: 0.85em;
+      }
+
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .alert {
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+      }
+
+      .alert-success {
+        background: #d1fae5;
+        color: #065f46;
+      }
+
+      .alert-error {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+
+      .notes-input {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #e0e0e0;
+        border-radius: 5px;
+        font-size: 0.9em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>👨‍🏫 Lecturer Dashboard</h1>
+        <p>Attendance Management System</p>
+      </header>
+
+      <div class="session-control">
+        <h2>📝 Create Attendance Session</h2>
+        <div class="form-group">
+          <label>Course:</label>
+          <select id="courseSelect">
+            <option value="">Select Course...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Date:</label>
+          <input type="date" id="sessionDate" />
+        </div>
+        <button onclick="createSession()" class="btn-success">
+          Create Session
+        </button>
+
+        <div id="activeSession" class="hidden" style="margin-top: 20px">
+          <h3>Active Session</h3>
+          <p id="sessionInfo"></p>
+          <button onclick="closeSession()" class="btn-danger">
+            Close Session (Mark Belum Absen as Alpha)
+          </button>
+        </div>
+      </div>
+
+      <div id="alertBox"></div>
+
+      <div id="statsSection" class="session-control hidden">
+        <h3>📊 Session Statistics</h3>
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-number" id="statTotal">0</div>
+            <div class="stat-label">Total Students</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-number" id="statHadir">0</div>
+            <div class="stat-label">Hadir</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-number" id="statIzin">0</div>
+            <div class="stat-label">Izin</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-number" id="statSakit">0</div>
+            <div class="stat-label">Sakit</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-number" id="statAlpha">0</div>
+            <div class="stat-label">Alpha</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-number" id="statBelum">0</div>
+            <div class="stat-label">Belum Absen</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="attendance-list">
+        <h2>📋 Attendance List</h2>
+        <div id="attendanceTable">
+          <p class="loading">Please create or select a session</p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const API_URL = "http://localhost:3000/api";
+      let currentSessionId = null;
+      let isLoadingSession = false;
+
+      // Set today's date as default
+      document.getElementById("sessionDate").valueAsDate = new Date();
+
+      // Try to load active session on page load
+      async function loadActiveSession() {
+        if (isLoadingSession) return;
+        isLoadingSession = true;
+
+        try {
+          const today = new Date().toISOString().split("T")[0];
+          const response = await fetch(
+            `${API_URL}/sessions/active?date=${today}`
+          );
+          const data = await response.json();
+
+          if (data.success && data.session) {
+            currentSessionId = data.session._id;
+            const courseCode = data.session.courseCode;
+            const date = new Date(data.session.date)
+              .toISOString()
+              .split("T")[0];
+
+            // Set form values
+            document.getElementById("courseSelect").value = courseCode;
+            document.getElementById("sessionDate").value = date;
+
+            showActiveSession(courseCode, date);
+            loadAttendanceList();
+
+            console.log("✅ Loaded active session:", currentSessionId);
+          } else {
+            console.log("ℹ️ No active session found");
+          }
+        } catch (error) {
+          console.error("Error loading active session:", error);
+        } finally {
+          isLoadingSession = false;
+        }
+      }
+
+      // Load courses
+      async function loadCourses() {
+        try {
+          const response = await fetch(`${API_URL}/courses`);
+          const data = await response.json();
+
+          const select = document.getElementById("courseSelect");
+          select.innerHTML = '<option value="">Select Course...</option>'; // Clear first
+
+          data.data.forEach((course) => {
+            const option = document.createElement("option");
+            option.value = course.courseCode;
+            option.textContent = `${course.courseCode} - ${course.courseName}`;
+            select.appendChild(option);
+          });
+
+          console.log("✅ Courses loaded");
+        } catch (error) {
+          showAlert("Error loading courses: " + error.message, "error");
+        }
+      }
+
+      // Create session
+      async function createSession() {
+        const courseCode = document.getElementById("courseSelect").value;
+        const date = document.getElementById("sessionDate").value;
+
+        if (!courseCode || !date) {
+          showAlert("Please select course and date", "error");
+          return;
+        }
+
+        try {
+          const response = await fetch(`${API_URL}/sessions/create`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ courseCode, date }),
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            currentSessionId = data.sessionId;
+            showAlert(
+              `Session created successfully! ${data.totalStudents} students added.`,
+              "success"
+            );
+            showActiveSession(courseCode, date);
+            loadAttendanceList();
+          } else {
+            showAlert(data.error, "error");
+          }
+        } catch (error) {
+          showAlert("Error creating session: " + error.message, "error");
+        }
+      }
+
+      // Show active session info
+      function showActiveSession(courseCode, date) {
+        document.getElementById("activeSession").classList.remove("hidden");
+        document.getElementById(
+          "sessionInfo"
+        ).textContent = `${courseCode} - ${date}`;
+      }
+
+      // Load attendance list
+      async function loadAttendanceList() {
+        if (!currentSessionId) {
+          console.log("⚠️ No session ID, skipping load");
+          return;
+        }
+
+        try {
+          console.log("🔄 Loading attendance for session:", currentSessionId);
+
+          const response = await fetch(
+            `${API_URL}/sessions/${currentSessionId}/attendances`
+          );
+          const data = await response.json();
+
+          if (data.success) {
+            console.log(
+              "✅ Attendance loaded:",
+              data.attendances.length,
+              "records"
+            );
+            console.log("📊 Stats:", data.stats);
+
+            displayAttendanceTable(data.attendances);
+            displayStats(data.stats);
+          } else {
+            console.error("❌ Failed to load attendance:", data.error);
+          }
+        } catch (error) {
+          console.error("❌ Error loading attendance:", error);
+          showAlert("Error loading attendance: " + error.message, "error");
+        }
+      }
+
+      // Display attendance table
+      function displayAttendanceTable(attendances) {
+        const html = `
+          <table>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>NPM</th>
+                <th>Student Name</th>
+                <th>Status</th>
+                <th>Check-In Time</th>
+                <th>Confidence</th>
+                <th>Notes</th>
+                <th>Attachment</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${attendances
+                .map(
+                  (att, index) => `
+                <tr>
+                  <td>${index + 1}</td>
+                  <td><strong>${att.npm}</strong></td>
+                  <td>${att.studentName}</td>
+                  <td>
+                    <div class="radio-group">
+                      <label>
+                        <input type="radio" name="status_${
+                          att._id
+                        }" value="Hadir" 
+                          ${att.status === "Hadir" ? "checked" : ""}
+                          onchange="updateStatus('${att._id}', 'Hadir')">
+                        <span class="status-hadir">Hadir</span>
+                      </label>
+                      <label>
+                        <input type="radio" name="status_${
+                          att._id
+                        }" value="Izin" 
+                          ${att.status === "Izin" ? "checked" : ""}
+                          onchange="updateStatus('${att._id}', 'Izin')">
+                        <span class="status-izin">Izin</span>
+                      </label>
+                      <label>
+                        <input type="radio" name="status_${
+                          att._id
+                        }" value="Sakit" 
+                          ${att.status === "Sakit" ? "checked" : ""}
+                          onchange="updateStatus('${att._id}', 'Sakit')">
+                        <span class="status-sakit">Sakit</span>
+                      </label>
+                      <label>
+                        <input type="radio" name="status_${
+                          att._id
+                        }" value="Alpha" 
+                          ${att.status === "Alpha" ? "checked" : ""}
+                          onchange="updateStatus('${att._id}', 'Alpha')">
+                        <span class="status-alpha">Alpha</span>
+                      </label>
+                      <label>
+                        <input type="radio" name="status_${
+                          att._id
+                        }" value="Belum Absen" 
+                          ${att.status === "Belum Absen" ? "checked" : ""}
+                          onchange="updateStatus('${att._id}', 'Belum Absen')">
+                        <span class="status-belum">Belum</span>
+                      </label>
+                    </div>
+                  </td>
+                  <td>${
+                    att.checkInTime
+                      ? new Date(att.checkInTime).toLocaleString("id-ID")
+                      : "-"
+                  }</td>
+                  <td>${
+                    att.confidence
+                      ? `<span class="confidence-badge">${att.confidence.toFixed(
+                          1
+                        )}%</span>`
+                      : "-"
+                  }</td>
+                  <td>
+                    <input type="text" class="notes-input" 
+                      value="${att.notes || ""}" 
+                      onchange="updateNotes('${att._id}', this.value)"
+                      placeholder="Add notes...">
+                  </td>
+                  <td>
+                    ${
+                      att.status === "Izin" || att.status === "Sakit"
+                        ? `
+                      <input type="file" id="file_${
+                        att._id
+                      }" class="file-input" 
+                        accept=".pdf" onchange="uploadFile('${att._id}', this)">
+                      <button class="upload-btn" onclick="document.getElementById('file_${
+                        att._id
+                      }').click()">
+                        📎 Upload PDF
+                      </button>
+                      ${
+                        att.attachmentPath
+                          ? `<br><a href="${att.attachmentPath}" target="_blank">View File</a>`
+                          : ""
+                      }
+                    `
+                        : "-"
+                    }
+                  </td>
+                </tr>
+              `
+                )
+                .join("")}
+            </tbody>
+          </table>
+        `;
+
+        document.getElementById("attendanceTable").innerHTML = html;
+
+        // Check for changes
+        attendances.forEach((att) => {
+          const prev = previousAttendances.find((p) => p.npm === att.npm);
+          if (prev && prev.status !== att.status) {
+            console.log(
+              `Status changed for ${att.npm}: ${prev.status} → ${att.status}`
+            );
+            setTimeout(() => highlightUpdatedRow(att.npm), 100);
+          }
+        });
+
+        previousAttendances = JSON.parse(JSON.stringify(attendances));
+      }
+
+      // Display statistics
+      function displayStats(stats) {
+        document.getElementById("statsSection").classList.remove("hidden");
+        document.getElementById("statTotal").textContent = stats.total;
+        document.getElementById("statHadir").textContent = stats.hadir;
+        document.getElementById("statIzin").textContent = stats.izin;
+        document.getElementById("statSakit").textContent = stats.sakit;
+        document.getElementById("statAlpha").textContent = stats.alpha;
+        document.getElementById("statBelum").textContent = stats.belumAbsen;
+      }
+
+      // Add visual feedback for status changes
+      function highlightUpdatedRow(npm) {
+        const rows = document.querySelectorAll("tr");
+        rows.forEach((row) => {
+          const npmCell = row.querySelector("td:nth-child(2)");
+          if (npmCell && npmCell.textContent === npm) {
+            row.style.backgroundColor = "#d1fae5";
+            setTimeout(() => {
+              row.style.backgroundColor = "";
+            }, 3000);
+          }
+        });
+      }
+
+      // Modify loadAttendanceList to store previous data
+      let previousAttendances = [];
+
+      // Update status
+      async function updateStatus(attendanceId, status) {
+        try {
+          const response = await fetch(
+            `${API_URL}/attendances/${attendanceId}/status`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status }),
+            }
+          );
+
+          const data = await response.json();
+
+          if (data.success) {
+            showAlert(`Status updated to ${status}`, "success");
+            loadAttendanceList(); // Refresh list
+          } else {
+            showAlert(data.error, "error");
+          }
+        } catch (error) {
+          showAlert("Error updating status: " + error.message, "error");
+        }
+      }
+
+      // Update notes (with debounce to prevent too many requests)
+      let notesTimeout;
+      async function updateNotes(attendanceId, notes) {
+        clearTimeout(notesTimeout);
+        notesTimeout = setTimeout(async () => {
+          try {
+            const response = await fetch(
+              `${API_URL}/attendances/${attendanceId}/status`,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ notes }),
+              }
+            );
+
+            const data = await response.json();
+
+            if (data.success) {
+              // Don't show alert for notes update to avoid spam
+              console.log("Notes updated");
+            }
+          } catch (error) {
+            console.error("Error updating notes:", error.message);
+          }
+        }, 1000); // Wait 1 second after typing stops
+      }
+
+      // Upload file
+      async function uploadFile(attendanceId, input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        if (file.type !== "application/pdf") {
+          showAlert("Only PDF files are allowed", "error");
+          return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+          showAlert("File size must be less than 5MB", "error");
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+          const response = await fetch(
+            `${API_URL}/attendances/${attendanceId}/upload`,
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+          const data = await response.json();
+
+          if (data.success) {
+            showAlert("File uploaded successfully", "success");
+            loadAttendanceList(); // Refresh list
+          } else {
+            showAlert(data.error, "error");
+          }
+        } catch (error) {
+          showAlert("Error uploading file: " + error.message, "error");
+        }
+      }
+
+      // Close session
+      async function closeSession() {
+        if (!currentSessionId) return;
+
+        if (
+          !confirm("Are you sure? All 'Belum Absen' will be marked as 'Alpha'")
+        ) {
+          return;
+        }
+
+        try {
+          const response = await fetch(
+            `${API_URL}/sessions/${currentSessionId}/close`,
+            {
+              method: "PUT",
+            }
+          );
+
+          const data = await response.json();
+
+          if (data.success) {
+            showAlert("Session closed successfully", "success");
+            loadAttendanceList();
+          } else {
+            showAlert(data.error, "error");
+          }
+        } catch (error) {
+          showAlert("Error closing session: " + error.message, "error");
+        }
+      }
+
+      // Show alert
+      function showAlert(message, type) {
+        const alertBox = document.getElementById("alertBox");
+        alertBox.innerHTML = `
+          <div class="alert alert-${type}">
+            ${message}
+          </div>
+        `;
+
+        setTimeout(() => {
+          alertBox.innerHTML = "";
+        }, 5000);
+      }
+
+      // Auto-refresh every 3 seconds (reduced from 5 for better real-time feel)
+      let refreshInterval;
+      function startAutoRefresh() {
+        refreshInterval = setInterval(() => {
+          if (currentSessionId) {
+            loadAttendanceList();
+          }
+        }, 3000);
+      }
+
+      function stopAutoRefresh() {
+        if (refreshInterval) {
+          clearInterval(refreshInterval);
+        }
+      }
+
+      // Start auto-refresh
+      startAutoRefresh();
+
+      // Initialize - load courses first, then try to load active session
+      loadCourses().then(() => {
+        loadActiveSession();
+      });
+    </script>
+  </body>
+</html>
